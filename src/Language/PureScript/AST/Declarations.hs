@@ -26,7 +26,6 @@ import Language.PureScript.Names
 import Language.PureScript.Kinds
 import Language.PureScript.TypeClassDictionaries
 import Language.PureScript.Comments
-import Language.PureScript.CodeGen.JS.AST
 import Language.PureScript.Environment
 
 -- |
@@ -51,7 +50,7 @@ isExported (Just exps) decl = any (matches decl) exps
   where
   matches (TypeDeclaration ident _) (ValueRef ident') = ident == ident'
   matches (ValueDeclaration ident _ _ _) (ValueRef ident') = ident == ident'
-  matches (ExternDeclaration _ ident _ _) (ValueRef ident') = ident == ident'
+  matches (ExternDeclaration ident _) (ValueRef ident') = ident == ident'
   matches (DataDeclaration _ ident _ _) (TypeRef ident' _) = ident == ident'
   matches (ExternDataDeclaration ident _) (TypeRef ident' _) = ident == ident'
   matches (TypeSynonymDeclaration ident _ _) (TypeRef ident' _) = ident == ident'
@@ -169,9 +168,9 @@ data Declaration
   --
   | BindingGroupDeclaration [(Ident, NameKind, Expr)]
   -- |
-  -- A foreign import declaration (type, name, optional inline Javascript, type)
+  -- A foreign import declaration (name, type)
   --
-  | ExternDeclaration ForeignImportType Ident (Maybe JS) Type
+  | ExternDeclaration Ident Type
   -- |
   -- A data type foreign import (name, kind)
   --
@@ -302,7 +301,7 @@ data Expr
   --
   | StringLiteral String
   -- |
-  -- A character literal 
+  -- A character literal
   --
   | CharLiteral Char
   -- |

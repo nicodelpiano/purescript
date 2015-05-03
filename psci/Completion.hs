@@ -199,7 +199,7 @@ identNames = nubOnFst . mapMaybe getDeclName . P.exportedDeclarations
   where
   getDeclName :: P.Declaration -> Maybe (P.Ident, P.Declaration)
   getDeclName d@(P.ValueDeclaration ident _ _ _)  = Just (ident, d)
-  getDeclName d@(P.ExternDeclaration _ ident _ _) = Just (ident, d)
+  getDeclName d@(P.ExternDeclaration ident _) = Just (ident, d)
   getDeclName (P.PositionedDeclaration _ _ d) = getDeclName d
   getDeclName _ = Nothing
 
@@ -212,10 +212,10 @@ dctorNames m = nubOnFst $ concatMap dctors dnames
   getDataDeclName _ = Nothing
 
   dnames :: [(N.ProperName, P.Declaration)]
-  dnames = (mapMaybe getDataDeclName onlyDataDecls)
+  dnames = mapMaybe getDataDeclName onlyDataDecls
 
   onlyDataDecls :: [P.Declaration]
-  onlyDataDecls = (filter P.isDataDecl (P.exportedDeclarations m))
+  onlyDataDecls = filter P.isDataDecl (P.exportedDeclarations m)
 
   dctors :: (N.ProperName, P.Declaration) -> [(N.ProperName, P.Declaration)]
   dctors (name, decl) = map (\n -> (n, decl)) (map fst (P.exportedDctors m name))

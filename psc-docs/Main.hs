@@ -60,7 +60,7 @@ docgen (PSCDocsOptions fmt input) = do
         pairs = map (\(k,m) -> (fromMaybe "" k,m))
         ldump :: [String] -> IO ()
         ldump = mapM_ putStrLn
-    
+
 parseFile :: FilePath -> IO (FilePath, String)
 parseFile input = (,) input <$> readFile input
 
@@ -125,20 +125,20 @@ renderTypeclassImage name =
   in tell ["![" ++ name' ++ "](images/" ++ name' ++ ".png)"]
 
 getDeclarationTitle :: P.Declaration -> Maybe String
-getDeclarationTitle (P.TypeDeclaration name _)                      = Just (show name)
-getDeclarationTitle (P.ExternDeclaration _ name _ _)                = Just (show name)
-getDeclarationTitle (P.DataDeclaration _ name _ _)                  = Just (show name)
-getDeclarationTitle (P.ExternDataDeclaration name _)                = Just (show name)
-getDeclarationTitle (P.TypeSynonymDeclaration name _ _)             = Just (show name)
-getDeclarationTitle (P.TypeClassDeclaration name _ _ _)   = Just (show name)
-getDeclarationTitle (P.TypeInstanceDeclaration name _ _ _ _)        = Just (show name)
-getDeclarationTitle (P.PositionedDeclaration _ _ d)                 = getDeclarationTitle d
-getDeclarationTitle _                                               = Nothing
+getDeclarationTitle (P.TypeDeclaration name _)               = Just (show name)
+getDeclarationTitle (P.ExternDeclaration name _)             = Just (show name)
+getDeclarationTitle (P.DataDeclaration _ name _ _)           = Just (show name)
+getDeclarationTitle (P.ExternDataDeclaration name _)         = Just (show name)
+getDeclarationTitle (P.TypeSynonymDeclaration name _ _)      = Just (show name)
+getDeclarationTitle (P.TypeClassDeclaration name _ _ _)      = Just (show name)
+getDeclarationTitle (P.TypeInstanceDeclaration name _ _ _ _) = Just (show name)
+getDeclarationTitle (P.PositionedDeclaration _ _ d)          = getDeclarationTitle d
+getDeclarationTitle _                                        = Nothing
 
 renderDeclaration :: Maybe [P.DeclarationRef] -> P.Declaration -> Docs
 renderDeclaration _ (P.TypeDeclaration ident ty) =
   fenced $ show ident ++ " :: " ++ prettyPrintType' ty
-renderDeclaration _ (P.ExternDeclaration _ ident _ ty) =
+renderDeclaration _ (P.ExternDeclaration ident ty) =
   fenced $ show ident ++ " :: " ++ prettyPrintType' ty
 renderDeclaration exps (P.DataDeclaration dtype name args ctors) = do
   let
@@ -213,7 +213,7 @@ prettyPrintType' = P.prettyPrintType . P.everywhereOnTypes dePrim
 
 getName :: P.Declaration -> String
 getName (P.TypeDeclaration ident _) = show ident
-getName (P.ExternDeclaration _ ident _ _) = show ident
+getName (P.ExternDeclaration ident _) = show ident
 getName (P.DataDeclaration _ name _ _) = P.runProperName name
 getName (P.ExternDataDeclaration name _) = P.runProperName name
 getName (P.TypeSynonymDeclaration name _ _) = P.runProperName name
@@ -242,13 +242,13 @@ instance Read Format where
     readsPrec _ "etags" = [(Etags, "")]
     readsPrec _ "ctags" = [(Ctags, "")]
     readsPrec _ "markdown" = [(Markdown, "")]
-    readsPrec _ _ = []    
+    readsPrec _ _ = []
 
 format :: Parser Format
 format = option auto $ value Markdown
          <> long "format"
          <> metavar "FORMAT"
-         <> help "Set output FORMAT (markdown | etags | ctags)"  
+         <> help "Set output FORMAT (markdown | etags | ctags)"
 
 pscDocsOptions :: Parser PSCDocsOptions
 pscDocsOptions = PSCDocsOptions <$> format <*> many inputFile
