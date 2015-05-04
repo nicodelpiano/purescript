@@ -47,9 +47,11 @@ import qualified Text.Parsec as P
 -- |
 -- A type of error messages
 --
-data ErrorMessage 
+data ErrorMessage
   = ErrorParsingExterns P.ParseError
+  | ErrorParsingFFIModule FilePath
   | ErrorParsingPrelude P.ParseError
+  | ErrorParsingModule P.ParseError
   | InvalidExternsFile FilePath
   | CannotGetFileInfo FilePath
   | CannotReadFile FilePath
@@ -70,7 +72,7 @@ data ErrorMessage
   | UnknownDataConstructor (Qualified ProperName) (Maybe (Qualified ProperName))
   | UnknownTypeConstructor (Qualified ProperName)
   | ConflictingImport String ModuleName
-  | ConflictingImports String ModuleName ModuleName  
+  | ConflictingImports String ModuleName ModuleName
   | ConflictingTypeDecls ProperName
   | ConflictingCtorDecls ProperName
   | TypeConflictsWithClass ProperName
@@ -132,10 +134,10 @@ data ErrorMessage
   | ErrorInForeignImport Ident ErrorMessage
   | PositionedError SourceSpan ErrorMessage
   deriving (Show)
-  
+
 instance UnificationError Type ErrorMessage where
   occursCheckFailed = InfiniteType
-  
+
 instance UnificationError Kind ErrorMessage where
   occursCheckFailed = InfiniteKind
 
@@ -144,7 +146,9 @@ instance UnificationError Kind ErrorMessage where
 --
 errorCode :: ErrorMessage -> String
 errorCode (ErrorParsingExterns _)       = "ErrorParsingExterns"
+errorCode (ErrorParsingFFIModule _)     = "ErrorParsingFFIModule"
 errorCode (ErrorParsingPrelude _)       = "ErrorParsingPrelude"
+errorCode (ErrorParsingModule _)        = "ErrorParsingModule"
 errorCode (InvalidExternsFile _)        = "InvalidExternsFile"
 errorCode (CannotGetFileInfo _)         = "CannotGetFileInfo"
 errorCode (CannotReadFile _)            = "CannotReadFile"
@@ -226,16 +230,16 @@ errorCode (ErrorInTypeSynonym _ e)      = errorCode e
 errorCode (ErrorInValueDeclaration _ e) = errorCode e
 errorCode (ErrorInForeignImport _ e)    = errorCode e
 errorCode (PositionedError _ e)         = errorCode e
-  
+
 -- |
 -- A stack trace for an error
 --
-newtype MultipleErrors = MultipleErrors 
+newtype MultipleErrors = MultipleErrors
   { runMultipleErrors :: [ErrorMessage] } deriving (Show, Monoid)
-  
+
 instance UnificationError Type MultipleErrors where
   occursCheckFailed = errorMessage . occursCheckFailed
-  
+
 instance UnificationError Kind MultipleErrors where
   occursCheckFailed = errorMessage . occursCheckFailed
 
@@ -262,7 +266,7 @@ data LabelType = TypeLabel | SkolemLabel String deriving (Show, Eq, Ord)
 type UnknownMap = M.Map (LabelType, Unknown) Unknown
 
 replaceUnknowns :: Type -> State UnknownMap Type
-replaceUnknowns = everywhereOnTypesM replaceTypes 
+replaceUnknowns = everywhereOnTypesM replaceTypes
   where
   lookupTable :: (LabelType, Unknown) -> UnknownMap -> (Unknown, UnknownMap)
   lookupTable x m = case M.lookup x m of
@@ -317,12 +321,12 @@ prettyPrintSingleError full e = prettyPrintErrorMessage <$> onTypesInErrorMessag
   prettyPrintErrorMessage em =
     paras
       [ go em
-      , line ("See " ++ wikiUri ++ " for more information, or to contribute content related to this error.") 
+      , line ("See " ++ wikiUri ++ " for more information, or to contribute content related to this error.")
       ]
     where
     wikiUri :: String
     wikiUri = "https://github.com/purescript/purescript/wiki/Error-Code-" ++ errorCode e
-      
+
     go :: ErrorMessage -> Box.Box
     go (CannotGetFileInfo path)        = paras [ line "Unable to read file info: "
                                                , indent . line $ path
@@ -336,7 +340,13 @@ prettyPrintSingleError full e = prettyPrintErrorMessage <$> onTypesInErrorMessag
     go (ErrorParsingExterns err)       = paras [ line "Error parsing externs files: "
                                                , indent . line . show $ err
                                                ]
+    go (ErrorParsingFFIModule path)    = paras [ line "Unable to parse module from FFI file: "
+                                               , indent . line $ path
+                                               ]
     go (ErrorParsingPrelude err)       = paras [ line "Error parsing prelude: "
+                                               , indent . line . show $ err
+                                               ]
+    go (ErrorParsingModule err)        = paras [ line "Error parsing module: "
                                                , indent . line . show $ err
                                                ]
     go (InvalidExternsFile path)       = paras [ line "Externs file is invalid: "
@@ -364,7 +374,7 @@ prettyPrintSingleError full e = prettyPrintErrorMessage <$> onTypesInErrorMessag
     go (UnknownValue name)             = line $ "Unknown value " ++ show name
     go (UnknownTypeConstructor name)   = line $ "Unknown type constructor " ++ show name
     go (UnknownDataConstructor dc tc)  = line $ "Unknown data constructor " ++ show dc ++ foldMap ((" for type constructor " ++) . show) tc
-    go (ConflictingImport nm mn)       = line $ "Declaration " ++ nm ++ " conflicts with import " ++ show mn 
+    go (ConflictingImport nm mn)       = line $ "Declaration " ++ nm ++ " conflicts with import " ++ show mn
     go (ConflictingImports nm m1 m2)   = line $ "Conflicting imports for " ++ nm ++ " from modules " ++ show m1 ++ " and " ++ show m2
     go (ConflictingTypeDecls nm)       = line $ "Conflicting type declarations for " ++ show nm
     go (ConflictingCtorDecls nm)       = line $ "Conflicting data constructor declarations for " ++ show nm
@@ -386,7 +396,7 @@ prettyPrintSingleError full e = prettyPrintErrorMessage <$> onTypesInErrorMessag
     go (PartiallyAppliedSynonym name)  = line $ "Partially applied type synonym " ++ show name
     go (EscapedSkolem binding)         = paras $ [ line "Rigid/skolem type variable has escaped." ]
                                                  <> foldMap (\expr -> [ line "Relevant expression: "
-                                                                      , indent $ line $ prettyPrintValue expr 
+                                                                      , indent $ line $ prettyPrintValue expr
                                                                       ]) binding
     go (TypesDoNotUnify t1 t2)         = paras [ line "Cannot unify type"
                                                , indent $ line $ prettyPrintType t1
@@ -409,7 +419,7 @@ prettyPrintSingleError full e = prettyPrintErrorMessage <$> onTypesInErrorMessag
     go (NoInstanceFound nm ts)         = line $ "No instance found for " ++ show nm ++ " " ++ unwords (map prettyPrintTypeAtom ts)
     go (DuplicateLabel l expr)         = paras $ [ line $ "Duplicate label " ++ show l ++ " in row." ]
                                                  <> foldMap (\expr' -> [ line "Relevant expression: "
-                                                                       , indent $ line $ prettyPrintValue expr' 
+                                                                       , indent $ line $ prettyPrintValue expr'
                                                                        ]) expr
     go (DuplicateTypeArgument name)    = line $ "Duplicate type argument " ++ show name
     go (DuplicateValueDeclaration nm)  = line $ "Duplicate value declaration for " ++ show nm
@@ -439,7 +449,7 @@ prettyPrintSingleError full e = prettyPrintErrorMessage <$> onTypesInErrorMessag
                                                  : map (line . prettyPrintExport) ys
     go (ShadowedName nm)               = line $ "Name '" ++ show nm ++ "' was shadowed."
     go PreludeNotPresent               = paras [ line $ "There is no Prelude module loaded, and the --no-prelude option was not specified."
-                                               , line $ "You probably need to install the Prelude and other dependencies using Bower." 
+                                               , line $ "You probably need to install the Prelude and other dependencies using Bower."
                                                ]
     go (ErrorUnifyingTypes t1 t2 err)  = paras [ line "Error unifying type "
                                                , indent $ line $ prettyPrintType t1
@@ -531,10 +541,10 @@ prettyPrintSingleError full e = prettyPrintErrorMessage <$> onTypesInErrorMessag
   prettyPrintDictionaryValue (SubclassDictionaryValue sup nm _) = paras [ line $ (show nm) ++ " via superclass"
                                                                         , indent $ prettyPrintDictionaryValue sup
                                                                         ]
-  
+
   -- |
   -- Pretty print and export declaration
-  --  
+  --
   prettyPrintExport :: DeclarationRef -> String
   prettyPrintExport (TypeRef pn _) = show pn
   prettyPrintExport (ValueRef ident) = show ident
