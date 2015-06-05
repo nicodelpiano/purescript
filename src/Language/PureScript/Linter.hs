@@ -30,6 +30,7 @@ import Control.Monad.Writer.Class
 import Language.PureScript.AST
 import Language.PureScript.Names
 import Language.PureScript.Errors
+import Language.PureScript.Check
 
 -- | Lint the PureScript AST.
 -- |
