@@ -81,9 +81,9 @@ library
                      Language.PureScript.DeadCodeElimination
                      Language.PureScript.Environment
                      Language.PureScript.Errors
-                     Language.PureScript.Exhaustive
                      Language.PureScript.Kinds
                      Language.PureScript.Linter
+                     Language.PureScript.Linter.Exhaustive
                      Language.PureScript.ModuleDependencies
                      Language.PureScript.Names
                      Language.PureScript.Options
