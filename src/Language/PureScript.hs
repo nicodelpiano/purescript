@@ -119,6 +119,8 @@ compile' env ms = do
   -- end tests --
   ---------------
 
+  mapM_ (P.checkExhaustiveModule env') elaborated 
+
   regrouped <- createBindingGroupsModule . collapseBindingGroupsModule $ elaborated
   let corefn = map (CoreFn.moduleToCoreFn env') regrouped
       entryPoints = moduleNameFromString `map` entryPointModules additional
