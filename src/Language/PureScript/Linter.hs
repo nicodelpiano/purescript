@@ -52,7 +52,7 @@ lint (Module _ mn ds _) = censor (onErrorMessages (ErrorInModule mn)) $ mapM_ li
 
   lintDeclaration :: Declaration -> m ()
   lintDeclaration d =
-    let (f, _, _, _, _) = everythingWithContextOnValues moduleNames mempty mappend stepD stepE stepB stepC def
+    let (f, _, _, _, _) = everythingWithContextOnValues moduleNames mempty mappend stepD stepE stepB def def
     in tell (f d)
     where
     def s _ = (s, mempty)
@@ -77,9 +77,6 @@ lint (Module _ mn ds _) = censor (onErrorMessages (ErrorInModule mn)) $ mapM_ li
     stepB s (VarBinder name) = bind s name
     stepB s (NamedBinder name _) = bind s name
     stepB s _ = (s, mempty)
-
-    stepC :: S.Set Ident -> CaseAlternative -> (S.Set Ident, MultipleErrors)
-    stepC s (CaseAlternative bs _) = (s, errorMessage (RedefinedIdent $ Ident (show bs)))
 
     bind :: S.Set Ident -> Ident -> (S.Set Ident, MultipleErrors)
     bind s name | name `S.member` s = (s, errorMessage (ShadowedName name))
