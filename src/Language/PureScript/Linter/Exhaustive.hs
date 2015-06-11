@@ -117,7 +117,7 @@ missingCasesMultiple :: Environment -> [Binder] -> [Binder] -> [[Binder]]
 missingCasesMultiple env = go
   where
   go [] _ = []
-  go (x:xs) (y:ys) 
+  go (x:xs) (y:ys)
     | null miss = map (x :) (go xs ys)
     | otherwise = map (: xs) miss ++ map (x :) (go xs ys)
     where
@@ -147,7 +147,12 @@ checkExhaustive env cas = makeResult $ foldl step [initial] cas
 
   makeResult :: [[Binder]] -> m ()
   makeResult bss | null bss = return ()
-                 | otherwise = tell $ (error $ concatMap show bss) --(error "TODO: add new warning type")
+                 | otherwise = tell $ (error $ concatMap show (map (map f) bss)) --(error "TODO: add new warning type")
+    where
+    -- this is for now
+    f :: Binder -> ProperName
+    f (ConstructorBinder (Qualified _ n) _) = n
+    f b = ProperName $ show b
 
 checkExhaustiveModule :: forall m. (Applicative m, MonadWriter MultipleErrors m) => Environment -> Module -> m ()
 checkExhaustiveModule env (Module _ _ ds _) = 
