@@ -20,6 +20,7 @@ module Language.PureScript.Linter.Exhaustive
 
 import qualified Data.Map as M
 import Data.Maybe (fromMaybe)
+import Data.List (delete)
 
 import Control.Applicative
 import Control.Monad.Writer.Class
@@ -119,11 +120,20 @@ missingCasesMultiple env = go
   go [] _ = []
   go (x:xs) (y:ys)
     | null miss = map (x :) (go xs ys)
-    | otherwise = map (: xs) miss ++ map (x :) (go xs ys)
+    | otherwise = map (: xs) miss ++ map (y :) (go xs ys)
     where
     miss = missingCasesSingle env x y
   go _ _ = error "Argument lengths did not match in missingCasesMultiple."
 
+-- |
+-- Is the first list of binders covered by the second?
+--
+isExhaustive :: Environment -> [Binder] -> [Binder] -> Bool
+isExhaustive env bs bs' = null $ missingCasesMultiple env bs' bs
+
+isExhaustiveMultiple :: Environment -> [[Binder]] -> [Binder] -> Bool
+isExhaustiveMultiple env [] bs' = True
+isExhaustiveMultiple env (x:xs) bs' = isExhaustive env x bs' && isExhaustiveMultiple env xs bs'
 -- |
 -- Returns the uncovered set of case alternatives
 -- TODO: handle guards
@@ -137,8 +147,9 @@ missingCases env uncovered ca = missingCasesMultiple env uncovered (caseAlternat
 checkExhaustive :: forall m. (MonadWriter MultipleErrors m) => Environment -> [CaseAlternative] -> m ()
 checkExhaustive env cas = makeResult $ foldl step [initial] cas
   where
+  -- ugly def... we might want to change this
   step :: [[Binder]] -> CaseAlternative -> [[Binder]]
-  step uncovered ca = concatMap (\u -> missingCases env u ca) uncovered
+  step uncovered ca = concatMap (\u -> filter (\p -> if isExhaustive env u p then True else isExhaustiveMultiple env uncovered p) (missingCases env u ca)) uncovered
 
   initial :: [Binder]
   initial = replicate numArgs NullBinder
