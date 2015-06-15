@@ -36,14 +36,7 @@ import Language.PureScript.Errors
 import Language.PureScript.AST.Traversals (everywhereOnValuesTopDownM)
 
 -- |
--- | Constructors handling
--- |
-
--- |
--- Given an environment and a datatype or newtype name,
--- this function returns the associated data constructors if it's the case of a datatype
--- where: - ProperName is the name of the constructor (for example, "Nothing" in Maybe)
---        - [Type] is the list of arguments, if it has (for example, "Just" has [TypeVar "a"])
+-- Qualifies a propername from a given qualified propername
 --
 qualifyProperName :: ProperName -> Qualified ProperName -> Qualified ProperName
 qualifyProperName pn qpn = Qualified (Just mn) pn
@@ -51,34 +44,46 @@ qualifyProperName pn qpn = Qualified (Just mn) pn
   (mn, _) = qualify defmn qpn
   defmn = moduleNameFromString "Main"
 
-getConsDataName :: Environment -> (Qualified ProperName) -> (Qualified ProperName)
-getConsDataName env con = qualifyProperName nm con
-  where
-  nm = case getConsInfo env con of
-         Nothing -> error $ "ProperName " ++ show con ++ " not in the scope of the current environment in getConsDataName."
-         Just (_, pm, _, _) -> pm
-
-getConsInfo :: Environment -> (Qualified ProperName) -> Maybe (DataDeclType, ProperName, Type, [Ident])
-getConsInfo env con = M.lookup con dce
-  where
-  dce :: M.Map (Qualified ProperName) (DataDeclType, ProperName, Type, [Ident])
-  dce = dataConstructors env
-
+-- |
+-- Given an environment and a datatype or newtype name,
+-- this function returns the associated data constructors if it's the case of a datatype
+-- where: - ProperName is the name of the constructor (for example, "Nothing" in Maybe)
+--        - [Type] is the list of arguments, if it has (for example, "Just" has [TypeVar "a"])
+--
 getConstructors :: Environment -> (Qualified ProperName) -> [(ProperName, [Type])]
 getConstructors env n = getConstructors' env qpn
   where
   qpn :: Qualified ProperName
   qpn = getConsDataName env n
 
-getConstructors' :: Environment -> (Qualified ProperName) -> [(ProperName, [Type])]
-getConstructors' env n = go lnte
-  where
-  lnte :: Maybe (Kind, TypeKind) 
-  lnte = M.lookup n (types env)
+  getConsDataName :: Environment -> (Qualified ProperName) -> (Qualified ProperName)
+  getConsDataName env con = qualifyProperName nm con
+    where
+    nm = case getConsInfo env con of
+           Nothing -> error $ "ProperName " ++ show con ++ " not in the scope of the current environment in getConsDataName."
+           Just (_, pm, _, _) -> pm
 
-  go :: Maybe (Kind, TypeKind) -> [(ProperName, [Type])]
-  go (Just (_, DataType _ pt)) = pt
-  go _ = []
+  getConsInfo :: Environment -> (Qualified ProperName) -> Maybe (DataDeclType, ProperName, Type, [Ident])
+  getConsInfo env con = M.lookup con dce
+    where
+    dce :: M.Map (Qualified ProperName) (DataDeclType, ProperName, Type, [Ident])
+    dce = dataConstructors env
+
+  getConstructors' :: Environment -> (Qualified ProperName) -> [(ProperName, [Type])]
+  getConstructors' env n = go lnte
+    where
+    lnte :: Maybe (Kind, TypeKind) 
+    lnte = M.lookup n (types env)
+
+    go :: Maybe (Kind, TypeKind) -> [(ProperName, [Type])]
+    go (Just (_, DataType _ pt)) = pt
+    go _ = []
+
+-- |
+-- Replicates a wildcard binder
+--
+initialize :: Int -> [Binder]
+initialize l = replicate l NullBinder
 
 -- |
 -- Find the uncovered set between two binders:
@@ -91,23 +96,12 @@ missingCasesSingle _ _ (VarBinder _) = []
 missingCasesSingle env NullBinder cb@(ConstructorBinder con bs) =
   concatMap (\cp -> missingCasesSingle env cp cb) all_pat
   where
-  all_pat = map (\(a,_) -> ConstructorBinder (qualifyProperName a con) []) (getConstructors env con)
+  all_pat = map (\(p,t) -> ConstructorBinder (qualifyProperName p con) (initialize $ length t)) $ getConstructors env con
 missingCasesSingle env cb@(ConstructorBinder con bs) (ConstructorBinder con' bs')
-  | con == con' = []
+  | con == con' = map (ConstructorBinder con) (missingCasesMultiple env bs bs')
   | otherwise = [cb]
+missingCasesSingle env b (PositionedBinder _ _ cb@(ConstructorBinder _ _)) = missingCasesSingle env b cb
 missingCasesSingle _ b _ = [b]
-{-
-missingCasesSingle env (ConstructorBinder con bs) b =
-  case b of
-    NullBinder -> undefined
-    VarBinder _ -> undefined
-    _ -> undefined
--- cons-cons
--- ConstructorBinder (Qualified ProperName) [Binder]
-missingCasesSingle env cb@(ConstructorBinder con bs) (ConstructorBinder con' bs')
-  | con == con' = undefined 
-  | otherwise = [cb]
--}
 
 -- |
 -- Returns the uncovered set of binders
@@ -132,8 +126,8 @@ isExhaustive :: Environment -> [Binder] -> [Binder] -> Bool
 isExhaustive env bs bs' = null $ missingCasesMultiple env bs' bs
 
 isExhaustiveMultiple :: Environment -> [[Binder]] -> [Binder] -> Bool
-isExhaustiveMultiple env [] bs' = True
-isExhaustiveMultiple env (x:xs) bs' = isExhaustive env x bs' && isExhaustiveMultiple env xs bs'
+isExhaustiveMultiple env bss bs = foldl (\acc bs' -> isExhaustive env bs' bs && acc) True bss
+
 -- |
 -- Returns the uncovered set of case alternatives
 -- TODO: handle guards
@@ -149,21 +143,16 @@ checkExhaustive env cas = makeResult $ foldl step [initial] cas
   where
   -- ugly def... we might want to change this
   step :: [[Binder]] -> CaseAlternative -> [[Binder]]
-  step uncovered ca = concatMap (\u -> filter (\p -> if isExhaustive env u p then True else isExhaustiveMultiple env uncovered p) (missingCases env u ca)) uncovered
+  step uncovered ca = concatMap (\u -> filter (\p -> isExhaustive env u p || isExhaustiveMultiple env uncovered p) (missingCases env u ca)) uncovered
 
   initial :: [Binder]
-  initial = replicate numArgs NullBinder
+  initial = initialize numArgs
     where
     numArgs = length . caseAlternativeBinders . head $ cas 
 
   makeResult :: [[Binder]] -> m ()
   makeResult bss | null bss = return ()
-                 | otherwise = tell $ (error $ concatMap show (map (map f) bss)) --(error "TODO: add new warning type")
-    where
-    -- this is for now
-    f :: Binder -> ProperName
-    f (ConstructorBinder (Qualified _ n) _) = n
-    f b = ProperName $ show b
+                 | otherwise = tell $ (error $ concatMap show bss) --(error "TODO: add new warning type")
 
 checkExhaustiveModule :: forall m. (Applicative m, MonadWriter MultipleErrors m) => Environment -> Module -> m ()
 checkExhaustiveModule env (Module _ _ ds _) = 
