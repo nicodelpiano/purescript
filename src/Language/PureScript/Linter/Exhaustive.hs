@@ -51,33 +51,30 @@ qualifyProperName pn qpn = Qualified (Just mn) pn
 --        - [Type] is the list of arguments, if it has (for example, "Just" has [TypeVar "a"])
 --
 getConstructors :: Environment -> (Qualified ProperName) -> [(ProperName, [Type])]
-getConstructors env n = getConstructors' env qpn
+getConstructors env n = go lnte
   where
   qpn :: Qualified ProperName
-  qpn = getConsDataName env n
+  qpn = getConsDataName n
 
-  getConsDataName :: Environment -> (Qualified ProperName) -> (Qualified ProperName)
-  getConsDataName env con = qualifyProperName nm con
+  getConsDataName :: (Qualified ProperName) -> (Qualified ProperName)
+  getConsDataName con = qualifyProperName nm con
     where
-    nm = case getConsInfo env con of
+    nm = case getConsInfo con of
            Nothing -> error $ "ProperName " ++ show con ++ " not in the scope of the current environment in getConsDataName."
            Just (_, pm, _, _) -> pm
 
-  getConsInfo :: Environment -> (Qualified ProperName) -> Maybe (DataDeclType, ProperName, Type, [Ident])
-  getConsInfo env con = M.lookup con dce
+  getConsInfo :: (Qualified ProperName) -> Maybe (DataDeclType, ProperName, Type, [Ident])
+  getConsInfo con = M.lookup con dce
     where
     dce :: M.Map (Qualified ProperName) (DataDeclType, ProperName, Type, [Ident])
     dce = dataConstructors env
 
-  getConstructors' :: Environment -> (Qualified ProperName) -> [(ProperName, [Type])]
-  getConstructors' env n = go lnte
-    where
-    lnte :: Maybe (Kind, TypeKind) 
-    lnte = M.lookup n (types env)
+  lnte :: Maybe (Kind, TypeKind) 
+  lnte = M.lookup qpn (types env)
 
-    go :: Maybe (Kind, TypeKind) -> [(ProperName, [Type])]
-    go (Just (_, DataType _ pt)) = pt
-    go _ = []
+  go :: Maybe (Kind, TypeKind) -> [(ProperName, [Type])]
+  go (Just (_, DataType _ pt)) = pt
+  go _ = []
 
 -- |
 -- Replicates a wildcard binder
@@ -100,7 +97,7 @@ missingCasesSingle env NullBinder cb@(ConstructorBinder con bs) =
 missingCasesSingle env cb@(ConstructorBinder con bs) (ConstructorBinder con' bs')
   | con == con' = map (ConstructorBinder con) (missingCasesMultiple env bs bs')
   | otherwise = [cb]
-missingCasesSingle env b (PositionedBinder _ _ cb@(ConstructorBinder _ _)) = missingCasesSingle env b cb
+missingCasesSingle env b (PositionedBinder _ _ cb) = missingCasesSingle env b cb
 missingCasesSingle _ b _ = [b]
 
 -- |
