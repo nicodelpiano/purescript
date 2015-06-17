@@ -119,6 +119,7 @@ data SimpleErrorMessage
   | TransitiveExportError DeclarationRef [DeclarationRef]
   | ShadowedName Ident
   | WildcardInferredType Type
+  | NotExhaustivePattern [[Binder]]
   | ClassOperator ProperName Ident
   deriving (Show)
 
@@ -227,6 +228,7 @@ errorCode em = case unwrapErrorMessage em of
   (TransitiveExportError _ _)   -> "TransitiveExportError"
   (ShadowedName _)              -> "ShadowedName"
   (WildcardInferredType _)      -> "WildcardInferredType"
+  (NotExhaustivePattern _)     -> "NotExhaustivePattern"
   (ClassOperator _ _)           -> "ClassOperator"
 
 -- |
@@ -552,6 +554,22 @@ prettyPrintSingleError full e = prettyPrintErrorMessage <$> onTypesInErrorMessag
             ]
     goSimple (WildcardInferredType ty) =
       line $ "The wildcard type definition has the inferred type " ++ prettyPrintType ty
+
+-----
+-- Not Exhaustive Warning
+-----
+    goSimple (NotExhaustivePattern bs) =
+      paras $ [ line "Pattern Match(es) are not exhaustive"
+              , line $ "The definition of " ++ show "" ++ " has the following uncovered cases:"
+              ]
+              ++ map (indent . line) ppbs
+      where
+      ppbs = map prettyPrintBinders bs
+      prettyPrintBinders :: [Binder] -> String
+      prettyPrintBinders = foldl (\acc b -> prettyPrintBinder b ++ " " ++ acc) []
+-----
+-----
+
     go (NotYetDefined names err) =
       paras [ line $ "The following are not yet defined here: " ++ intercalate ", " (map show names) ++ ":"
             , indent $ go err

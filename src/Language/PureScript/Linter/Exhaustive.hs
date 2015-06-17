@@ -98,6 +98,8 @@ missingCasesSingle env cb@(ConstructorBinder con bs) (ConstructorBinder con' bs'
   | con == con' = map (ConstructorBinder con) (missingCasesMultiple env bs bs')
   | otherwise = [cb]
 missingCasesSingle env b (PositionedBinder _ _ cb) = missingCasesSingle env b cb
+missingCasesSingle env NullBinder (BooleanBinder b) = [BooleanBinder $ not b]
+missingCasesSingle env (VarBinder _) (BooleanBinder b) = [BooleanBinder $ not b]
 missingCasesSingle _ b _ = [b]
 
 -- |
@@ -123,7 +125,7 @@ isExhaustive :: Environment -> [Binder] -> [Binder] -> Bool
 isExhaustive env bs bs' = null $ missingCasesMultiple env bs' bs
 
 isExhaustiveMultiple :: Environment -> [[Binder]] -> [Binder] -> Bool
-isExhaustiveMultiple env bss bs = foldl (\acc bs' -> isExhaustive env bs' bs && acc) True bss
+isExhaustiveMultiple env bss bs = foldl (\acc bs' -> acc && isExhaustive env bs' bs) True bss
 
 -- |
 -- Returns the uncovered set of case alternatives
@@ -149,7 +151,7 @@ checkExhaustive env cas = makeResult $ foldl step [initial] cas
 
   makeResult :: [[Binder]] -> m ()
   makeResult bss | null bss = return ()
-                 | otherwise = tell $ (error $ concatMap show bss) --(error "TODO: add new warning type")
+                 | otherwise = tell $ (errorMessage $ NotExhaustivePattern bss) --(error "TODO: add new warning type")
 
 checkExhaustiveModule :: forall m. (Applicative m, MonadWriter MultipleErrors m) => Environment -> Module -> m ()
 checkExhaustiveModule env (Module _ _ ds _) = 

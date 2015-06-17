@@ -192,30 +192,42 @@ prettyPrintBinderAtom :: Pattern PrinterState Binder String
 prettyPrintBinderAtom = mkPattern' match
   where
   match :: Binder -> StateT PrinterState Maybe String
-  match NullBinder = return "_"
-  match (StringBinder str) = return $ show str
-  match (CharBinder c) = return $ show c
-  match (NumberBinder num) = return $ either show show num
-  match (BooleanBinder True) = return "true"
-  match (BooleanBinder False) = return "false"
-  match (VarBinder ident) = return $ show ident
-  match (ConstructorBinder ctor args) = concat <$> sequence
-    [ return $ show ctor ++ " "
-    , unwords <$> forM args match
-    ]
-  match (ObjectBinder bs) = concat <$> sequence
+  match = match' 0
+
+  match' :: Int -> Binder -> StateT PrinterState Maybe String
+  match' _ NullBinder = return "_"
+  match' _ (StringBinder str) = return $ show str
+  match' _ (CharBinder c) = return $ show c
+  match' _ (NumberBinder num) = return $ either show show num
+  match' _ (BooleanBinder True) = return "true"
+  match' _ (BooleanBinder False) = return "false"
+  match' _ (VarBinder ident) = return $ show ident
+  match' _ (ConstructorBinder ctor []) = concat <$> sequence
+      [ return $ show ctor ]
+  match' n (ConstructorBinder ctor args) 
+    | n == 0 = concat <$> sequence
+      [ return $ show ctor ++ " "
+      , unwords <$> forM args (match' (n+1))
+      ]
+    | otherwise = concat <$> sequence
+      [ return $ "(" ++ show ctor ++ " "
+      , unwords <$> forM args (match' (n+1))
+      , return ")"
+      ]
+  match' _ (ObjectBinder bs) = concat <$> sequence
     [ return "{\n"
     , withIndent $ prettyPrintMany prettyPrintObjectPropertyBinder bs
     , currentIndent
     , return "}"
     ]
-  match (ArrayBinder bs) = concat <$> sequence
+  match' _ (ArrayBinder bs) = concat <$> sequence
     [ return "["
     , unwords <$> mapM prettyPrintBinder' bs
     , return "]"
     ]
-  match (NamedBinder ident binder) = ((show ident ++ "@") ++) <$> prettyPrintBinder' binder
-  match (PositionedBinder _ _ binder) = prettyPrintBinder' binder
+  match' _ (NamedBinder ident binder) = ((show ident ++ "@") ++) <$> prettyPrintBinder' binder
+  match' n (PositionedBinder _ _ binder) = match' n binder
+  --match' _ (PositionedBinder _ _ binder) = prettyPrintBinder' binder
 
 -- |
 -- Generate a pretty-printed string representing a Binder
