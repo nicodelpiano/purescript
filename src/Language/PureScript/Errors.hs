@@ -566,7 +566,7 @@ prettyPrintSingleError full e = prettyPrintErrorMessage <$> onTypesInErrorMessag
       where
       ppbs = map prettyPrintBinders bs
       prettyPrintBinders :: [Binder] -> String
-      prettyPrintBinders = foldl (\acc b -> prettyPrintBinder b ++ " " ++ acc) []
+      prettyPrintBinders = foldl (\acc b -> acc ++ " " ++ prettyPrintBinder b) []
 -----
 -----
 

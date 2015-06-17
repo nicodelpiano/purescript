@@ -72,9 +72,10 @@ getConstructors env n = go lnte
   lnte :: Maybe (Kind, TypeKind) 
   lnte = M.lookup qpn (types env)
 
+-- extractConstructors
   go :: Maybe (Kind, TypeKind) -> [(ProperName, [Type])]
   go (Just (_, DataType _ pt)) = pt
-  go _ = []
+  go _ = [] --error--[]
 
 -- |
 -- Replicates a wildcard binder
