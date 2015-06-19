@@ -51,7 +51,7 @@ qualifyProperName pn qpn = Qualified (Just mn) pn
 --        - [Type] is the list of arguments, if it has (for example, "Just" has [TypeVar "a"])
 --
 getConstructors :: Environment -> (Qualified ProperName) -> [(ProperName, [Type])]
-getConstructors env n = go lnte
+getConstructors env n = extractConstructors lnte
   where
   qpn :: Qualified ProperName
   qpn = getConsDataName n
@@ -73,9 +73,9 @@ getConstructors env n = go lnte
   lnte = M.lookup qpn (types env)
 
 -- extractConstructors
-  go :: Maybe (Kind, TypeKind) -> [(ProperName, [Type])]
-  go (Just (_, DataType _ pt)) = pt
-  go _ = [] --error--[]
+  extractConstructors :: Maybe (Kind, TypeKind) -> [(ProperName, [Type])]
+  extractConstructors (Just (_, DataType _ pt)) = pt
+  extractConstructors _ = error ""
 
 -- |
 -- Replicates a wildcard binder
