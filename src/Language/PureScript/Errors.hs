@@ -565,6 +565,7 @@ prettyPrintSingleError full e = prettyPrintErrorMessage <$> onTypesInErrorMessag
               ++ map (indent . line) ppbs
       where
       ppbs = map prettyPrintBinders bs
+
       prettyPrintBinders :: [Binder] -> String
       prettyPrintBinders = unwords . (map prettyPrintBinder) 
 -----

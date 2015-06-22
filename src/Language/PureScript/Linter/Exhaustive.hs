@@ -98,9 +98,13 @@ missingCasesSingle env NullBinder cb@(ConstructorBinder con bs) =
 missingCasesSingle env cb@(ConstructorBinder con bs) (ConstructorBinder con' bs')
   | con == con' = map (ConstructorBinder con) (missingCasesMultiple env bs bs')
   | otherwise = [cb]
-missingCasesSingle env b (PositionedBinder _ _ cb) = missingCasesSingle env b cb
+missingCasesSingle env NullBinder (ArrayBinder bs)
+  | null bs = [] 
+  | otherwise = [] 
 missingCasesSingle env NullBinder (BooleanBinder b) = [BooleanBinder $ not b]
-missingCasesSingle env (VarBinder _) (BooleanBinder b) = [BooleanBinder $ not b]
+missingCasesSingle env (BooleanBinder bl) (BooleanBinder br) = [BooleanBinder $ bl == br]
+missingCasesSingle env b (PositionedBinder _ _ cb) = missingCasesSingle env b cb
+missingCasesSingle env (VarBinder _) b = missingCasesSingle env NullBinder b
 missingCasesSingle _ b _ = [b]
 
 -- |
