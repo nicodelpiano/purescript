@@ -20,7 +20,8 @@ module Language.PureScript.Linter.Exhaustive
 
 import qualified Data.Map as M
 import Data.Maybe (fromMaybe)
-import Data.List (delete)
+import Data.List (union, sortBy)
+import Data.Function (on)
 
 import Control.Applicative
 import Control.Monad.Writer.Class
@@ -72,7 +73,6 @@ getConstructors env n = extractConstructors lnte
   lnte :: Maybe (Kind, TypeKind) 
   lnte = M.lookup qpn (types env)
 
--- extractConstructors
   extractConstructors :: Maybe (Kind, TypeKind) -> [(ProperName, [Type])]
   extractConstructors (Just (_, DataType _ pt)) = pt
   extractConstructors _ = error ""
@@ -84,6 +84,17 @@ initialize :: Int -> [Binder]
 initialize l = replicate l NullBinder
 
 -- |
+--
+--
+completeMissing :: Eq a => b -> [(a,b)] -> [(a,b)] -> ([(a,b)],[(a,b)])
+completeMissing el bs bs' = (lbs,lbs')
+  where
+  (nbs,ebs) = unzip bs
+  (nbs',ebs') = unzip bs'
+  names = nbs `union` nbs'
+  lbs = map (\n -> if n `elem` nbs then (n,snd $ head $ filter (\(l,_) -> l==n) bs) else (n,el)) names
+  lbs' = map (\n -> if n `elem` nbs' then (n,snd $ head $ filter (\(l,_) -> l==n) bs') else (n,el)) names
+-- |
 -- Find the uncovered set between two binders:
 -- the first binder is the case we are trying to cover
 -- the second one is the matching binder
@@ -91,20 +102,31 @@ initialize l = replicate l NullBinder
 missingCasesSingle :: Environment -> Binder -> Binder -> [Binder]
 missingCasesSingle _ _ NullBinder = []
 missingCasesSingle _ _ (VarBinder _) = []
+missingCasesSingle env (VarBinder _) b = missingCasesSingle env NullBinder b
 missingCasesSingle env NullBinder cb@(ConstructorBinder con bs) =
-  concatMap (\cp -> missingCasesSingle env cp cb) all_pat
+  concatMap (\cp -> missingCasesSingle env cp cb) allPatterns
   where
-  all_pat = map (\(p,t) -> ConstructorBinder (qualifyProperName p con) (initialize $ length t)) $ getConstructors env con
+  allPatterns = map (\(p,t) -> ConstructorBinder (qualifyProperName p con) (initialize $ length t)) $ getConstructors env con
 missingCasesSingle env cb@(ConstructorBinder con bs) (ConstructorBinder con' bs')
   | con == con' = map (ConstructorBinder con) (missingCasesMultiple env bs bs')
   | otherwise = [cb]
 missingCasesSingle env NullBinder (ArrayBinder bs)
   | null bs = [] 
-  | otherwise = [] 
+  | otherwise = []
+missingCasesSingle env NullBinder (ObjectBinder bs) =
+  map (ObjectBinder . zip (map fst bs)) allMisses
+  where
+  allMisses = missingCasesMultiple env (initialize $ length bs) (map snd bs)
+missingCasesSingle env (ObjectBinder bs) (ObjectBinder bs') =
+  map (ObjectBinder . zip sortedNames) $ missingCasesMultiple env ocbs ocbs'
+  where
+  (cbs,cbs') = completeMissing NullBinder bs bs'
+  sortNames = sortBy (compare `on` fst)
+  sortedNames = map fst $ sortNames cbs
+  (ocbs,ocbs') = (map snd $ sortNames cbs, map snd $ sortNames cbs')
 missingCasesSingle env NullBinder (BooleanBinder b) = [BooleanBinder $ not b]
 missingCasesSingle env (BooleanBinder bl) (BooleanBinder br) = [BooleanBinder $ bl == br]
 missingCasesSingle env b (PositionedBinder _ _ cb) = missingCasesSingle env b cb
-missingCasesSingle env (VarBinder _) b = missingCasesSingle env NullBinder b
 missingCasesSingle _ b _ = [b]
 
 -- |

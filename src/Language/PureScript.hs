@@ -106,16 +106,14 @@ compile' env ms = do
 
   -----------------
   -- start tests --
-  {-
   tell $ errorMessage (RedefinedIdent $ Ident (show $ M.assocs (dataConstructors env')))
   --tell $ errorMessage (RedefinedIdent $ Ident (show $ M.elems (names env')))
   tell $ errorMessage (RedefinedIdent $ Ident (show $ M.assocs (types env')))
 
-  let util = filter {-(isValueDecl)-} (\x -> case x of
-                                              PositionedDeclaration sp _ _ -> spanName sp == "examples/manual/passing/testy.purs"; _ -> False) (concat $ map (\modules -> case modules of
+  let util = {-filter {-(isValueDecl)-} (\x -> case x of
+                                              PositionedDeclaration sp _ _ -> spanName sp == "examples/manual/passing/testy.purs"; _ -> False)-} (concat $ map (\modules -> case modules of
                                                          Module _ _ decs _ -> decs) elaborated)
   tell $ errorMessage (RedefinedIdent (Ident (concat $ map show [util])))
-  -}
   -- end tests --
   ---------------
 
