@@ -19,7 +19,7 @@ module Language.PureScript.Linter.Exhaustive
   ) where
 
 import qualified Data.Map as M
-import Data.Maybe (fromJust)
+import Data.Maybe (fromMaybe)
 import Data.List (union, sortBy)
 import Data.Function (on)
 
@@ -130,10 +130,10 @@ missingCasesSingle env (ObjectBinder bs) (ObjectBinder bs') =
   (sbs, sbs') = (sortNames bs, sortNames bs')
 
   compB :: String -> Maybe Binder -> Maybe Binder -> (Binder, Binder)
-  compB _ Nothing Nothing = (NullBinder, NullBinder)
-  compB _ Nothing b = (NullBinder, fromJust b)
-  compB _ b Nothing = (fromJust b, NullBinder)
   compB _ (Just b) (Just b') = (b, b')
+  compB _ mb mb' = (fm mb, fm mb')
+    where
+    fm = fromMaybe NullBinder
 
   (sortedNames, binders) = unzip $ completeMissing compB sbs sbs'
 missingCasesSingle env NullBinder (BooleanBinder b) = [BooleanBinder $ not b]
