@@ -19,7 +19,7 @@ module Language.PureScript.Linter.Exhaustive
   ) where
 
 import qualified Data.Map as M
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromJust)
 import Data.List (union, sortBy)
 import Data.Function (on)
 
@@ -86,14 +86,19 @@ initialize l = replicate l NullBinder
 -- |
 --
 --
-completeMissing :: Eq a => b -> [(a,b)] -> [(a,b)] -> ([(a,b)],[(a,b)])
-completeMissing el bs bs' = (lbs,lbs')
-  where
-  (nbs,ebs) = unzip bs
-  (nbs',ebs') = unzip bs'
-  names = nbs `union` nbs'
-  lbs = map (\n -> if n `elem` nbs then (n,snd $ head $ filter (\(l,_) -> l==n) bs) else (n,el)) names
-  lbs' = map (\n -> if n `elem` nbs' then (n,snd $ head $ filter (\(l,_) -> l==n) bs') else (n,el)) names
+completeMissing :: Ord a =>
+  (a -> Maybe b -> Maybe c -> d) -> {- b or c might be missing -}
+  [(a, b)] -> {- Collection of bs -}
+  [(a, c)] -> {- Collection of cs -}
+  [(a, d)] {- Zipped result -}
+completeMissing _ [] [] = []
+completeMissing f ((s, b):bs) [] = (s, f s (Just b) Nothing) : completeMissing f bs []
+completeMissing f [] ((s, b):bs) = (s, f s Nothing (Just b)) : completeMissing f [] bs
+completeMissing f bsl@((s, b):bs) bsr@((s', b'):bs')
+  | s < s' = (s, f s (Just b) Nothing) : completeMissing f bs bsr
+  | s > s' = (s', f s Nothing (Just b')) : completeMissing f bsl bs'
+  | otherwise = (s, f s (Just b) (Just b')) : completeMissing f bs bs'
+
 -- |
 -- Find the uncovered set between two binders:
 -- the first binder is the case we are trying to cover
@@ -106,7 +111,7 @@ missingCasesSingle env (VarBinder _) b = missingCasesSingle env NullBinder b
 missingCasesSingle env NullBinder cb@(ConstructorBinder con bs) =
   concatMap (\cp -> missingCasesSingle env cp cb) allPatterns
   where
-  allPatterns = map (\(p,t) -> ConstructorBinder (qualifyProperName p con) (initialize $ length t)) $ getConstructors env con
+  allPatterns = map (\(p, t) -> ConstructorBinder (qualifyProperName p con) (initialize $ length t)) $ getConstructors env con
 missingCasesSingle env cb@(ConstructorBinder con bs) (ConstructorBinder con' bs')
   | con == con' = map (ConstructorBinder con) (missingCasesMultiple env bs bs')
   | otherwise = [cb]
@@ -118,12 +123,19 @@ missingCasesSingle env NullBinder (ObjectBinder bs) =
   where
   allMisses = missingCasesMultiple env (initialize $ length bs) (map snd bs)
 missingCasesSingle env (ObjectBinder bs) (ObjectBinder bs') =
-  map (ObjectBinder . zip sortedNames) $ missingCasesMultiple env ocbs ocbs'
+  map (ObjectBinder . zip sortedNames) $ uncurry (missingCasesMultiple env) (unzip binders)
   where
-  (cbs,cbs') = completeMissing NullBinder bs bs'
   sortNames = sortBy (compare `on` fst)
-  sortedNames = map fst $ sortNames cbs
-  (ocbs,ocbs') = (map snd $ sortNames cbs, map snd $ sortNames cbs')
+
+  (sbs, sbs') = (sortNames bs, sortNames bs')
+
+  compB :: String -> Maybe Binder -> Maybe Binder -> (Binder, Binder)
+  compB _ Nothing Nothing = (NullBinder, NullBinder)
+  compB _ Nothing b = (NullBinder, fromJust b)
+  compB _ b Nothing = (fromJust b, NullBinder)
+  compB _ (Just b) (Just b') = (b, b')
+
+  (sortedNames, binders) = unzip $ completeMissing compB sbs sbs'
 missingCasesSingle env NullBinder (BooleanBinder b) = [BooleanBinder $ not b]
 missingCasesSingle env (BooleanBinder bl) (BooleanBinder br) = [BooleanBinder $ bl == br]
 missingCasesSingle env b (PositionedBinder _ _ cb) = missingCasesSingle env b cb

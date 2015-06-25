@@ -104,6 +104,7 @@ compile' env ms = do
   (desugared, nextVar) <- runSupplyT 0 $ desugar sorted
   (elaborated, env') <- runCheck' env $ forM desugared $ typeCheckModule mainModuleIdent
 
+  {-
   -----------------
   -- start tests --
   tell $ errorMessage (RedefinedIdent $ Ident (show $ M.assocs (dataConstructors env')))
@@ -116,6 +117,7 @@ compile' env ms = do
   tell $ errorMessage (RedefinedIdent (Ident (concat $ map show [util])))
   -- end tests --
   ---------------
+  -}
 
   mapM_ (P.checkExhaustiveModule env') elaborated 
 
