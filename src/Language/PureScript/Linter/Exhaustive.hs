@@ -90,14 +90,14 @@ completeMissing :: Ord a =>
   (a -> Maybe b -> Maybe c -> d) -> {- b or c might be missing -}
   [(a, b)] -> {- Collection of bs -}
   [(a, c)] -> {- Collection of cs -}
-  [(a, d)] {- Zipped result -}
+  [d] {- Zipped result -}
 completeMissing _ [] [] = []
-completeMissing f ((s, b):bs) [] = (s, f s (Just b) Nothing) : completeMissing f bs []
-completeMissing f [] ((s, b):bs) = (s, f s Nothing (Just b)) : completeMissing f [] bs
+completeMissing f ((s, b):bs) [] = map (f s (Just b) Nothing) bs
+completeMissing f [] ((s, b):bs) = map (f s Nothing (Just b)) bs
 completeMissing f bsl@((s, b):bs) bsr@((s', b'):bs')
-  | s < s' = (s, f s (Just b) Nothing) : completeMissing f bs bsr
-  | s > s' = (s', f s Nothing (Just b')) : completeMissing f bsl bs'
-  | otherwise = (s, f s (Just b) (Just b')) : completeMissing f bs bs'
+  | s < s' = (f s (Just b) Nothing) : completeMissing f bs bsr
+  | s > s' = (f s' Nothing (Just b')) : completeMissing f bsl bs'
+  | otherwise = (f s (Just b) (Just b')) : completeMissing f bs bs'
 
 -- |
 -- Find the uncovered set between two binders:
@@ -129,13 +129,15 @@ missingCasesSingle env (ObjectBinder bs) (ObjectBinder bs') =
 
   (sbs, sbs') = (sortNames bs, sortNames bs')
 
-  compB :: String -> Maybe Binder -> Maybe Binder -> (Binder, Binder)
-  compB _ (Just b) (Just b') = (b, b')
-  compB _ mb mb' = (fm mb, fm mb')
+  compB :: a -> Maybe a -> Maybe a -> (a, a)
+  compB e b b' = (fm b, fm b')
     where
-    fm = fromMaybe NullBinder
+    fm = fromMaybe e
 
-  (sortedNames, binders) = unzip $ completeMissing compB sbs sbs'
+  compBS :: Eq a => b -> a -> Maybe b -> Maybe b -> (a, (b, b))
+  compBS e s b b' = (s, compB e b b')
+
+  (sortedNames, binders) = unzip $ completeMissing (compBS NullBinder) sbs sbs'
 missingCasesSingle env NullBinder (BooleanBinder b) = [BooleanBinder $ not b]
 missingCasesSingle env (BooleanBinder bl) (BooleanBinder br) = [BooleanBinder $ bl == br]
 missingCasesSingle env b (PositionedBinder _ _ cb) = missingCasesSingle env b cb
@@ -190,7 +192,7 @@ checkExhaustive env cas = makeResult $ foldl step [initial] cas
 
   makeResult :: [[Binder]] -> m ()
   makeResult bss | null bss = return ()
-                 | otherwise = tell $ (errorMessage $ NotExhaustivePattern bss) --(error "TODO: add new warning type")
+                 | otherwise = tell $ (errorMessage $ NotExhaustivePattern bss)
 
 checkExhaustiveModule :: forall m. (Applicative m, MonadWriter MultipleErrors m) => Environment -> Module -> m ()
 checkExhaustiveModule env (Module _ _ ds _) = 
