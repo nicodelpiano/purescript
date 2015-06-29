@@ -92,8 +92,8 @@ completeMissing :: Ord a =>
   [(a, c)] -> {- Collection of cs -}
   [d] {- Zipped result -}
 completeMissing _ [] [] = []
-completeMissing f ((s, b):bs) [] = map (f s (Just b) Nothing) bs
-completeMissing f [] ((s, b):bs) = map (f s Nothing (Just b)) bs
+completeMissing f bs [] = map (\(s, b) -> f s (Just b) Nothing) bs
+completeMissing f [] bs = map (\(s, b) -> f s Nothing (Just b)) bs
 completeMissing f bsl@((s, b):bs) bsr@((s', b'):bs')
   | s < s' = (f s (Just b) Nothing) : completeMissing f bs bsr
   | s > s' = (f s' Nothing (Just b')) : completeMissing f bsl bs'
