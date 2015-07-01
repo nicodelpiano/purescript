@@ -20,7 +20,7 @@ module Language.PureScript.Linter.Exhaustive
 
 import qualified Data.Map as M
 import Data.Maybe (fromMaybe)
-import Data.List (union, sortBy)
+import Data.List (sortBy)
 import Data.Function (on)
 
 import Control.Applicative
@@ -108,14 +108,14 @@ missingCasesSingle :: Environment -> Binder -> Binder -> [Binder]
 missingCasesSingle _ _ NullBinder = []
 missingCasesSingle _ _ (VarBinder _) = []
 missingCasesSingle env (VarBinder _) b = missingCasesSingle env NullBinder b
-missingCasesSingle env NullBinder cb@(ConstructorBinder con bs) =
+missingCasesSingle env NullBinder cb@(ConstructorBinder con _) =
   concatMap (\cp -> missingCasesSingle env cp cb) allPatterns
   where
   allPatterns = map (\(p, t) -> ConstructorBinder (qualifyProperName p con) (initialize $ length t)) $ getConstructors env con
 missingCasesSingle env cb@(ConstructorBinder con bs) (ConstructorBinder con' bs')
   | con == con' = map (ConstructorBinder con) (missingCasesMultiple env bs bs')
   | otherwise = [cb]
-missingCasesSingle env NullBinder (ArrayBinder bs)
+missingCasesSingle _ NullBinder (ArrayBinder bs)
   | null bs = [] 
   | otherwise = []
 missingCasesSingle env NullBinder (ObjectBinder bs) =
@@ -138,8 +138,8 @@ missingCasesSingle env (ObjectBinder bs) (ObjectBinder bs') =
   compBS e s b b' = (s, compB e b b')
 
   (sortedNames, binders) = unzip $ completeMissing (compBS NullBinder) sbs sbs'
-missingCasesSingle env NullBinder (BooleanBinder b) = [BooleanBinder $ not b]
-missingCasesSingle env (BooleanBinder bl) (BooleanBinder br) = [BooleanBinder $ bl == br]
+missingCasesSingle _ NullBinder (BooleanBinder b) = [BooleanBinder $ not b]
+missingCasesSingle _ (BooleanBinder bl) (BooleanBinder br) = [BooleanBinder $ bl == br]
 missingCasesSingle env b (PositionedBinder _ _ cb) = missingCasesSingle env b cb
 missingCasesSingle _ b _ = [b]
 
@@ -169,10 +169,56 @@ isExhaustiveMultiple :: Environment -> [[Binder]] -> [Binder] -> Bool
 isExhaustiveMultiple env bss bs = foldl (\acc bs' -> acc && isExhaustive env bs' bs) True bss
 
 -- |
+-- Guard handling
+--
+-- We say a guard is exhaustive iff it has an otherwise (true) expression.
+-- Example:
+-- f x | x < 0 = 0
+--     | otherwise = 1
+-- Is exhaustive, whereas `f x | x < 0` is not
+--
+-- An example with GHC (just for having an idea of the expected behaviour)
+-- ghci> let g Z | Z == Z = Z; g (S _) | Z == Z = Z;
+-- Missing cases = {Z, S _} (are only exhaustive guards with otherwise or true expressions)
+--
+-- The function below say whether or not a guard has an otherwise expression
+--
+isExhaustiveGuard :: Either [(Guard, Expr)] Expr -> Bool
+isExhaustiveGuard (Left gs) = not . null $ filter (\(g, _) -> isOtherwise g) gs
+  where
+  isOtherwise :: Expr -> Bool
+  isOtherwise (TypedValue _ (BooleanLiteral True) _) = True
+  isOtherwise _ = False
+isExhaustiveGuard (Right _) = True 
+
+-- |
+-- If a guard does not have an otherwise case,
+-- just return a `_` (NullBinder)
+--
+missingGuard :: CaseAlternative -> [[Binder]]
+missingGuard ca = go $ isExhaustiveGuard (caseAlternativeResult ca)
+  where
+  go :: Bool -> [[Binder]]
+  go False = [casBinders]
+  go _ = []
+
+  casBinders :: [Binder]
+  casBinders = caseAlternativeBinders ca
+
+-- |
 -- Returns the uncovered set of case alternatives
--- TODO: handle guards
+--
 missingCases :: Environment -> [Binder] -> CaseAlternative -> [[Binder]]
 missingCases env uncovered ca = missingCasesMultiple env uncovered (caseAlternativeBinders ca)
+
+missingAlternative :: Environment -> [Binder] -> CaseAlternative -> [[Binder]]
+missingAlternative env uncovered ca = mg ++ mc
+  where
+  mc :: [[Binder]]
+  mc = missingCases env uncovered ca
+ 
+  mg :: [[Binder]]
+  mg = missingGuard ca
 
 -- |
 -- Main exhaustivity checker function
@@ -183,7 +229,7 @@ checkExhaustive env cas = makeResult $ foldl step [initial] cas
   where
   -- ugly def... we might want to change this
   step :: [[Binder]] -> CaseAlternative -> [[Binder]]
-  step uncovered ca = concatMap (\u -> filter (\p -> isExhaustive env u p || isExhaustiveMultiple env uncovered p) (missingCases env u ca)) uncovered
+  step uncovered ca = concatMap (\u -> {-filter (\p -> isExhaustive env u p || isExhaustiveMultiple env uncovered p)-} (missingAlternative env u ca)) uncovered
 
   initial :: [Binder]
   initial = initialize numArgs
