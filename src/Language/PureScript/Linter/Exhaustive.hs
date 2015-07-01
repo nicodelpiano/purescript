@@ -177,10 +177,6 @@ isExhaustiveMultiple env bss bs = foldl (\acc bs' -> acc && isExhaustive env bs'
 --     | otherwise = 1
 -- Is exhaustive, whereas `f x | x < 0` is not
 --
--- An example with GHC (just for having an idea of the expected behaviour)
--- ghci> let g Z | Z == Z = Z; g (S _) | Z == Z = Z;
--- Missing cases = {Z, S _} (are only exhaustive guards with otherwise or true expressions)
---
 -- The function below say whether or not a guard has an otherwise expression
 --
 isExhaustiveGuard :: Either [(Guard, Expr)] Expr -> Bool
@@ -192,33 +188,15 @@ isExhaustiveGuard (Left gs) = not . null $ filter (\(g, _) -> isOtherwise g) gs
 isExhaustiveGuard (Right _) = True 
 
 -- |
--- If a guard does not have an otherwise case,
--- just return a `_` (NullBinder)
---
-missingGuard :: CaseAlternative -> [[Binder]]
-missingGuard ca = go $ isExhaustiveGuard (caseAlternativeResult ca)
-  where
-  go :: Bool -> [[Binder]]
-  go False = [casBinders]
-  go _ = []
-
-  casBinders :: [Binder]
-  casBinders = caseAlternativeBinders ca
-
--- |
 -- Returns the uncovered set of case alternatives
 --
 missingCases :: Environment -> [Binder] -> CaseAlternative -> [[Binder]]
 missingCases env uncovered ca = missingCasesMultiple env uncovered (caseAlternativeBinders ca)
 
 missingAlternative :: Environment -> [Binder] -> CaseAlternative -> [[Binder]]
-missingAlternative env uncovered ca = mg ++ mc
-  where
-  mc :: [[Binder]]
-  mc = missingCases env uncovered ca
- 
-  mg :: [[Binder]]
-  mg = missingGuard ca
+missingAlternative env uncovered ca
+  | isExhaustiveGuard (caseAlternativeResult ca) = missingCases env uncovered ca
+  | otherwise = [uncovered]
 
 -- |
 -- Main exhaustivity checker function
@@ -227,7 +205,6 @@ missingAlternative env uncovered ca = mg ++ mc
 checkExhaustive :: forall m. (MonadWriter MultipleErrors m) => Environment -> [CaseAlternative] -> m ()
 checkExhaustive env cas = makeResult $ foldl step [initial] cas
   where
-  -- ugly def... we might want to change this
   step :: [[Binder]] -> CaseAlternative -> [[Binder]]
   step uncovered ca = concatMap (\u -> {-filter (\p -> isExhaustive env u p || isExhaustiveMultiple env uncovered p)-} (missingAlternative env u ca)) uncovered
 
