@@ -554,10 +554,6 @@ prettyPrintSingleError full e = prettyPrintErrorMessage <$> onTypesInErrorMessag
             ]
     goSimple (WildcardInferredType ty) =
       line $ "The wildcard type definition has the inferred type " ++ prettyPrintType ty
-
------
--- Not Exhaustive Warning
------
     goSimple (NotExhaustivePattern bs) =
       paras $ [ line "Pattern Match(es) are not exhaustive"
               , line $ "The definition of " ++ show "" ++ " has the following uncovered cases:"
@@ -568,9 +564,6 @@ prettyPrintSingleError full e = prettyPrintErrorMessage <$> onTypesInErrorMessag
 
       prettyPrintBinders :: [Binder] -> String
       prettyPrintBinders = unwords . (map prettyPrintBinder) 
------
------
-
     go (NotYetDefined names err) =
       paras [ line $ "The following are not yet defined here: " ++ intercalate ", " (map show names) ++ ":"
             , indent $ go err

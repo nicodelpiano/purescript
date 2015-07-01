@@ -20,7 +20,7 @@ module Language.PureScript.Linter.Exhaustive
 
 import qualified Data.Map as M
 import Data.Maybe (fromMaybe)
-import Data.List (sortBy)
+import Data.List (foldl', sortBy)
 import Data.Function (on)
 
 import Control.Applicative
@@ -166,7 +166,7 @@ isExhaustive :: Environment -> [Binder] -> [Binder] -> Bool
 isExhaustive env bs bs' = null $ missingCasesMultiple env bs' bs
 
 isExhaustiveMultiple :: Environment -> [[Binder]] -> [Binder] -> Bool
-isExhaustiveMultiple env bss bs = foldl (\acc bs' -> acc && isExhaustive env bs' bs) True bss
+isExhaustiveMultiple env bss bs = foldl' (\acc bs' -> acc && isExhaustive env bs' bs) True bss
 
 -- |
 -- Guard handling
@@ -193,8 +193,8 @@ isExhaustiveGuard (Right _) = True
 missingCases :: Environment -> [Binder] -> CaseAlternative -> [[Binder]]
 missingCases env uncovered ca = missingCasesMultiple env uncovered (caseAlternativeBinders ca)
 
-missingAlternative :: Environment -> [Binder] -> CaseAlternative -> [[Binder]]
-missingAlternative env uncovered ca
+missingAlternative :: Environment -> CaseAlternative -> [Binder] -> [[Binder]]
+missingAlternative env ca uncovered
   | isExhaustiveGuard (caseAlternativeResult ca) = missingCases env uncovered ca
   | otherwise = [uncovered]
 
@@ -203,10 +203,10 @@ missingAlternative env uncovered ca
 -- Returns the uncovered set of case alternatives.
 -- 
 checkExhaustive :: forall m. (MonadWriter MultipleErrors m) => Environment -> [CaseAlternative] -> m ()
-checkExhaustive env cas = makeResult $ foldl step [initial] cas
+checkExhaustive env cas = makeResult $ foldl' step [initial] cas
   where
   step :: [[Binder]] -> CaseAlternative -> [[Binder]]
-  step uncovered ca = concatMap (\u -> {-filter (\p -> isExhaustive env u p || isExhaustiveMultiple env uncovered p)-} (missingAlternative env u ca)) uncovered
+  step uncovered ca = concatMap (missingAlternative env ca) uncovered
 
   initial :: [Binder]
   initial = initialize numArgs
