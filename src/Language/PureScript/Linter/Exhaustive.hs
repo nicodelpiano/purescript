@@ -31,6 +31,7 @@ import Data.Function (on)
 
 import Control.Monad (unless)
 import Control.Applicative
+import Control.Arrow (first, second)
 import Control.Monad.Writer.Class
 
 import Language.PureScript.AST.Binders
@@ -40,6 +41,7 @@ import Language.PureScript.Names as P
 import Language.PureScript.Kinds
 import Language.PureScript.Types as P
 import Language.PureScript.Errors
+import Language.PureScript.Linter.Redundant
 
 import Language.PureScript.AST.Traversals (everywhereOnValuesTopDownM)
 
@@ -106,7 +108,7 @@ genericMerge f bsl@((s, b):bs) bsr@((s', b'):bs')
   | otherwise = (f s (Just b) (Just b')) : genericMerge f bs bs'
 
 -- |
--- Find the uncovered set between two binders:
+-- Finds the uncovered set between two binders:
 -- the first binder is the case we are trying to cover the second one is the matching binder
 --
 missingCasesSingle :: Environment -> ModuleName -> Binder -> Binder -> [Binder]
@@ -228,20 +230,26 @@ missingAlternative env mn ca uncovered
 -- Then, returns the uncovered set of case alternatives.
 -- 
 checkExhaustive :: forall m. (MonadWriter MultipleErrors m) => Environment -> ModuleName -> [CaseAlternative] -> m ()
-checkExhaustive env mn cas = makeResult . nub $ foldl' step [initial] cas
+checkExhaustive env mn cas = makeResult . first nub . second nub $ foldl' step ([initial], []) cas
   where
-  step :: [[Binder]] -> CaseAlternative -> [[Binder]]
-  step uncovered ca = concatMap (missingAlternative env mn ca) uncovered
+  step :: ([[Binder]], [[Binder]]) -> CaseAlternative -> ([[Binder]], [[Binder]])
+  step (uncovered, redundant) ca = --concatMap (missingAlternative env mn ca) uncovered
+    let x = concatMap (missingAlternative env mn ca) uncovered
+        y = map (overlapAlternative env mn ca) uncovered
+    in (x, if null uncovered || (not ([] `elem` y) && not (null y)) then caseAlternativeBinders ca : redundant else redundant) -- this should be fixed inside `overlapAlternative`, and delete the `PositionedBinder` constructor, otherwise can't apply `nub`
 
   initial :: [Binder]
   initial = initialize numArgs
     where
     numArgs = length . caseAlternativeBinders . head $ cas 
 
-  makeResult :: [[Binder]] -> m ()
-  makeResult bss = unless (null bss) tellWarning 
+  makeResult :: ([[Binder]], [[Binder]]) -> m ()
+  makeResult (bss, bss') =
+    do unless (null bss) tellExhaustive
+       unless (null bss') tellRedundant
     where
-    tellWarning = tell . errorMessage $ NotExhaustivePattern bss
+    tellExhaustive = tell . errorMessage $ NotExhaustivePattern bss
+    tellRedundant = tell . errorMessage $ OverlappingPattern bss'
 
 -- |
 -- Exhaustivity checking over a list of declarations
