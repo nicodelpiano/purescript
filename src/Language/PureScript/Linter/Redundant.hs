@@ -1,6 +1,6 @@
 -----------------------------------------------------------------------------
 --
--- Module      :  Language.PureScript.Exhaustive
+-- Module      :  Language.PureScript.Redundant
 -- Copyright   :  (c) 2013-14 Phil Freeman, (c) 2014 Gary Burgess, and other contributors
 -- License     :  MIT
 --
@@ -28,49 +28,71 @@ import Language.PureScript.AST.Declarations
 import Language.PureScript.Environment
 import Language.PureScript.Names as P
 
+import Language.PureScript.Linter.Utils
+
 -- |
--- Finds the redundant set between two binders:
--- the first binder is a missing case and the second one is the matching binder
+-- Given two binders (the first one is an uncovered binder),
+-- tells whether or not the second binder covers the first one.
 --
-coverCasesSingle :: Environment -> ModuleName -> Binder -> Binder -> [Binder]
-coverCasesSingle _ _ _ NullBinder = [NullBinder]
-coverCasesSingle _ _ _ (VarBinder _) = [NullBinder]
-coverCasesSingle _ _ NullBinder b = [b]
-coverCasesSingle _ _ (VarBinder _) b = [b]
-coverCasesSingle env mn br (NamedBinder _ bl) = coverCasesSingle env mn br bl
-coverCasesSingle env mn (ConstructorBinder con bs) (ConstructorBinder con' bs')
-  | con == con' = map (ConstructorBinder con) $ coverCasesMultiple env mn bs bs'
+coverCasesSingle :: Binder -> Binder -> [Binder]
+coverCasesSingle _ NullBinder = [NullBinder]
+coverCasesSingle _ (VarBinder _) = [NullBinder]
+coverCasesSingle NullBinder b = [b]
+coverCasesSingle (VarBinder _) b = [b]
+coverCasesSingle br (NamedBinder _ bl) = coverCasesSingle br bl
+coverCasesSingle (ConstructorBinder con bs) (ConstructorBinder con' bs')
+  | con == con' = map (ConstructorBinder con) $ coverCasesMultiple bs bs'
   | otherwise = [] -- con' covers nothing for con, it is maybe an overlapping case
-coverCasesSingle _ _ _ _ = []
+coverCasesSingle _ _ = []
 
-overlapCasesSingle :: Environment -> ModuleName -> Binder -> Binder -> [Binder]
-overlapCasesSingle _ _ NullBinder _ = []
-overlapCasesSingle _ _ (VarBinder _) _ = []
-overlapCasesSingle _ _ _ NullBinder = []
-overlapCasesSingle _ _ _ (VarBinder _) = []
-overlapCasesSingle env mn br (NamedBinder _ bl) = overlapCasesSingle env mn br bl
-overlapCasesSingle env mn (ConstructorBinder con bs) b@(ConstructorBinder con' bs')
-  | con == con' = map (ConstructorBinder con) $ overlapCasesMultiple env mn bs bs'
-  | otherwise = [b]
-overlapCasesSingle env mn b (PositionedBinder _ _ cb) = overlapCasesSingle env mn b cb
-overlapCasesSingle _ _ _ _ = []
-
-coverCasesMultiple :: Environment -> ModuleName -> [Binder] -> [Binder] -> [[Binder]]
-coverCasesMultiple env mn = go
+coverCasesMultiple :: [Binder] -> [Binder] -> [[Binder]]
+coverCasesMultiple = go
   where
   go [] [] = [[]]
-  go bs@(_:_) bs'@(_:_) = zipWith (coverCasesSingle env mn) bs bs'
+  go bs@(_:_) bs'@(_:_) = zipWith coverCasesSingle bs bs'
   go _ _ = error "Argument lengths did not match in coverCasesMultiple."
 
-overlapCasesMultiple :: Environment -> ModuleName -> [Binder] -> [Binder] -> [[Binder]]
-overlapCasesMultiple env mn = go
+coverAlternative :: CaseAlternative -> [Binder] -> [[Binder]]
+coverAlternative ca uncovered = coverCasesMultiple uncovered (caseAlternativeBinders ca) 
+
+-- |
+-- Given two binders (the first one is an uncovered binder),
+-- tells whether or not the second binder overlaps the first one.
+--
+overlapCasesSingle :: Binder -> Binder -> [Binder]
+overlapCasesSingle NullBinder _ = []
+overlapCasesSingle (VarBinder _) _ = []
+overlapCasesSingle _ NullBinder = []
+overlapCasesSingle _ (VarBinder _) = []
+overlapCasesSingle br (NamedBinder _ bl) = overlapCasesSingle br bl
+overlapCasesSingle (ConstructorBinder con bs) b@(ConstructorBinder con' bs')
+  | con == con' = map (ConstructorBinder con) $ overlapCasesMultiple bs bs'
+  | otherwise = [b]
+{- overlapCasesSingle (ObjectBinder bs) (ObjectBinder bs') =
+  map ObjectBinder $ zipWith overlapCasesSingle sbs sbs'
+  where
+  sortNames = sortBy (compare `on` fst)
+
+  (sbs, sbs') = (sortNames bs, sortNames bs')
+
+  compB :: a -> Maybe a -> Maybe a -> (a, a)
+  compB e b b' = (fm b, fm b')
+    where
+    fm = fromMaybe e
+
+  compBS :: Eq a => b -> a -> Maybe b -> Maybe b -> (a, (b, b))
+  compBS e s b b' = (s, compB e b b')
+
+  (sortedNames, binders) = unzip $ genericMerge (compBS NullBinder) sbs sbs' -}
+overlapCasesSingle b (PositionedBinder _ _ cb) = overlapCasesSingle b cb
+overlapCasesSingle _ _ = []
+
+overlapCasesMultiple :: [Binder] -> [Binder] -> [[Binder]]
+overlapCasesMultiple = go
   where
   go [] [] = []
-  go bs@(_:_) bs'@(_:_) = if all (==[]) (zipWith (overlapCasesSingle env mn) bs bs') then [] else [bs']
+  go bs@(_:_) bs'@(_:_) = if all (==[]) (zipWith overlapCasesSingle bs bs') then [] else [bs']
   go _ _ = error "Argument lengths did not match in overlapCasesMultiple."
 
-overlapAlternative :: Environment -> ModuleName -> CaseAlternative -> [Binder] -> [[Binder]]
-overlapAlternative env mn ca uncovered = overlapCasesMultiple env mn uncovered (caseAlternativeBinders ca) 
-
-coverAlternative :: Environment -> ModuleName -> CaseAlternative -> [Binder] -> [[Binder]]
-coverAlternative env mn ca uncovered = coverCasesMultiple env mn uncovered (caseAlternativeBinders ca) 
+overlapAlternative :: CaseAlternative -> [Binder] -> [[Binder]]
+overlapAlternative ca uncovered = overlapCasesMultiple uncovered (caseAlternativeBinders ca) 
