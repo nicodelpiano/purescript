@@ -21,7 +21,9 @@
 
 module Language.PureScript.Linter.Redundant where 
 
+import Data.Maybe (fromMaybe)
 import Data.List (foldl', sortBy, nub)
+import Data.Function (on)
 
 import Language.PureScript.AST.Binders
 import Language.PureScript.AST.Declarations
@@ -68,8 +70,8 @@ overlapCasesSingle br (NamedBinder _ bl) = overlapCasesSingle br bl
 overlapCasesSingle (ConstructorBinder con bs) b@(ConstructorBinder con' bs')
   | con == con' = map (ConstructorBinder con) $ overlapCasesMultiple bs bs'
   | otherwise = [b]
-{- overlapCasesSingle (ObjectBinder bs) (ObjectBinder bs') =
-  map ObjectBinder $ zipWith overlapCasesSingle sbs sbs'
+overlapCasesSingle (ObjectBinder bs) b@(ObjectBinder bs') =
+  if any (/=[]) (uncurry (zipWith overlapCasesSingle) (unzip binders)) then [b] else []
   where
   sortNames = sortBy (compare `on` fst)
 
@@ -83,7 +85,7 @@ overlapCasesSingle (ConstructorBinder con bs) b@(ConstructorBinder con' bs')
   compBS :: Eq a => b -> a -> Maybe b -> Maybe b -> (a, (b, b))
   compBS e s b b' = (s, compB e b b')
 
-  (sortedNames, binders) = unzip $ genericMerge (compBS NullBinder) sbs sbs' -}
+  (sortedNames, binders) = unzip $ genericMerge (compBS NullBinder) sbs sbs'
 overlapCasesSingle b (PositionedBinder _ _ cb) = overlapCasesSingle b cb
 overlapCasesSingle _ _ = []
 
