@@ -121,7 +121,7 @@ missingCasesSingle env mn NullBinder cb@(ConstructorBinder con _) =
   allPatterns = map (\(p, t) -> ConstructorBinder (qualifyName p mn con) (initialize $ length t))
                   $ getConstructors env mn con
 missingCasesSingle env mn cb@(ConstructorBinder con bs) (ConstructorBinder con' bs')
-  | con == con' && null bs && null bs' = ([], True)
+  -- | con == con' && null bs && null bs' = ([], True)
   | con == con' = let (bs'', pr) = missingCasesMultiple env mn bs bs' in (map (ConstructorBinder con) bs'', pr)
   | otherwise = ([cb], False)
 missingCasesSingle _ _ NullBinder (ArrayBinder bs)
@@ -185,8 +185,8 @@ missingCasesSingle _ _ b _ = ([b], False)
 missingCasesMultiple :: Environment -> ModuleName -> [Binder] -> [Binder] -> ([[Binder]], Bool)
 missingCasesMultiple env mn = go
   where
-  go [] [] = ([], False)
-  go (x:xs) (y:ys) = (map (: xs) miss1 ++ map (x :) miss2, pr1 || pr2)
+  go [] [] = ([], True)
+  go (x:xs) (y:ys) = (map (: xs) miss1 ++ map (x :) miss2, pr1 && pr2)
     where
     (miss1, pr1) = missingCasesSingle env mn x y
     (miss2, pr2) = go xs ys
