@@ -121,7 +121,6 @@ missingCasesSingle env mn NullBinder cb@(ConstructorBinder con _) =
   allPatterns = map (\(p, t) -> ConstructorBinder (qualifyName p mn con) (initialize $ length t))
                   $ getConstructors env mn con
 missingCasesSingle env mn cb@(ConstructorBinder con bs) (ConstructorBinder con' bs')
-  -- | con == con' && null bs && null bs' = ([], True)
   | con == con' = let (bs'', pr) = missingCasesMultiple env mn bs bs' in (map (ConstructorBinder con) bs'', pr)
   | otherwise = ([cb], False)
 missingCasesSingle _ _ NullBinder (ArrayBinder bs)
@@ -233,23 +232,27 @@ missingAlternative env mn ca uncovered
 -- Then, returns the uncovered set of case alternatives.
 -- 
 checkExhaustive :: forall m. (MonadWriter MultipleErrors m) => Environment -> ModuleName -> [CaseAlternative] -> m ()
-checkExhaustive env mn cas = makeResult . first nub $ foldl' step ([initial], True) cas
+checkExhaustive env mn cas = makeResult . first nub $ foldl' step ([initial], (True, [])) cas
   where
-  step :: ([[Binder]], Bool) -> CaseAlternative -> ([[Binder]], Bool)
-  step (uncovered, nec) ca = 
+  step :: ([[Binder]], (Bool, [[Binder]])) -> CaseAlternative -> ([[Binder]], (Bool, [[Binder]]))
+  step (uncovered, (nec, redundant)) ca =
     let (missed, pr) = unzip (map (missingAlternative env mn ca) uncovered)
-    in (concat missed, or pr && nec)
+        cond = or pr
+    in (concat missed, (cond && nec, if cond then redundant else caseAlternativeBinders ca : redundant))
 
   initial :: [Binder]
   initial = initialize numArgs
     where
     numArgs = length . caseAlternativeBinders . head $ cas 
 
-  makeResult :: ([[Binder]], Bool) -> m ()
-  makeResult (_, False) = error "Redundant!"
-  makeResult (bss, _) = unless (null bss) tellWarning 
+  makeResult :: ([[Binder]], (Bool, [[Binder]])) -> m ()
+  --makeResult (_, (False, _)) = error "Redundant!"
+  makeResult (bss, (_, bss')) =
+    do unless (null bss) tellExhaustive
+       unless (null bss') tellRedundant
     where
-    tellWarning = tell . errorMessage . uncurry NotExhaustivePattern . second null . splitAt 5 $ bss
+    tellExhaustive = tell . errorMessage . uncurry NotExhaustivePattern . second null . splitAt 5 $ bss
+    tellRedundant = tell . errorMessage . uncurry OverlappingPattern . second null . splitAt 5 $ bss'
 
 -- |
 -- Exhaustivity checking over a list of declarations
