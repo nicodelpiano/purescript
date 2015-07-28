@@ -110,22 +110,24 @@ genericMerge f bsl@((s, b):bs) bsr@((s', b'):bs')
 -- Find the uncovered set between two binders:
 -- the first binder is the case we are trying to cover, the second one is the matching binder
 --
-missingCasesSingle :: Environment -> ModuleName -> Binder -> Binder -> ([Binder], Bool)
-missingCasesSingle _ _ _ NullBinder = ([], True)
-missingCasesSingle _ _ _ (VarBinder _) = ([], True)
+missingCasesSingle :: Environment -> ModuleName -> Binder -> Binder -> ([Binder], Maybe Bool)
+-- Maybe Bool: Nothing = DontKnow, Just False = Redundant (covers nothing)
+--             Just True = NotRedundant (covers something)
+missingCasesSingle _ _ _ NullBinder = ([], Just True)
+missingCasesSingle _ _ _ (VarBinder _) = ([], Just True)
 missingCasesSingle env mn (VarBinder _) b = missingCasesSingle env mn NullBinder b
 missingCasesSingle env mn br (NamedBinder _ bl) = missingCasesSingle env mn br bl
 missingCasesSingle env mn NullBinder cb@(ConstructorBinder con _) =
-  (concatMap (\cp -> fst $ missingCasesSingle env mn cp cb) allPatterns, True)
+  (concatMap (\cp -> fst $ missingCasesSingle env mn cp cb) allPatterns, Just True)
   where
   allPatterns = map (\(p, t) -> ConstructorBinder (qualifyName p mn con) (initialize $ length t))
                   $ getConstructors env mn con
 missingCasesSingle env mn cb@(ConstructorBinder con bs) (ConstructorBinder con' bs')
   | con == con' = let (bs'', pr) = missingCasesMultiple env mn bs bs' in (map (ConstructorBinder con) bs'', pr)
-  | otherwise = ([cb], False)
-missingCasesSingle _ _ NullBinder (ArrayBinder bs)
-  | null bs = ([], True) 
-  | otherwise = ([], True)
+  | otherwise = ([cb], Just False)
+missingCasesSingle _ _ NullBinder (ArrayBinder _) = ([], Nothing)
+ -- | null bs = ([], Nothing) 
+ -- | otherwise = ([], Nothing)
 missingCasesSingle env mn NullBinder (ObjectBinder bs) =
   (map (ObjectBinder . zip (map fst bs)) allMisses, pr)
   where
@@ -148,12 +150,12 @@ missingCasesSingle env mn (ObjectBinder bs) (ObjectBinder bs') =
   compBS e s b b' = (s, compB e b b')
 
   (sortedNames, binders) = unzip $ genericMerge (compBS NullBinder) sbs sbs'
-missingCasesSingle _ _ NullBinder (BooleanBinder b) = ([BooleanBinder $ not b], True)
+missingCasesSingle _ _ NullBinder (BooleanBinder b) = ([BooleanBinder $ not b], Just True)
 missingCasesSingle _ _ (BooleanBinder bl) (BooleanBinder br)
-  | bl == br = ([], True)
-  | otherwise = ([BooleanBinder bl], False)
+  | bl == br = ([], Just True)
+  | otherwise = ([BooleanBinder bl], Just False)
 missingCasesSingle env mn b (PositionedBinder _ _ cb) = missingCasesSingle env mn b cb
-missingCasesSingle _ _ b _ = ([b], True)
+missingCasesSingle _ _ b _ = ([b], Nothing)
 
 -- |
 -- Returns the uncovered set of binders
@@ -181,11 +183,11 @@ missingCasesSingle _ _ b _ = ([b], True)
 --       redundant or not, but uncovered at least. If we use `y` instead, we'll need to have a redundancy checker
 --       (which ought to be available soon), or increase the complexity of the algorithm.
 --
-missingCasesMultiple :: Environment -> ModuleName -> [Binder] -> [Binder] -> ([[Binder]], Bool)
+missingCasesMultiple :: Environment -> ModuleName -> [Binder] -> [Binder] -> ([[Binder]], Maybe Bool)
 missingCasesMultiple env mn = go
   where
-  go [] [] = ([], True)
-  go (x:xs) (y:ys) = (map (: xs) miss1 ++ map (x :) miss2, pr1 && pr2)
+  go [] [] = ([], pure True)
+  go (x:xs) (y:ys) = (map (: xs) miss1 ++ map (x :) miss2, liftA2 (&&) pr1 pr2)
     where
     (miss1, pr1) = missingCasesSingle env mn x y
     (miss2, pr2) = go xs ys
@@ -215,10 +217,10 @@ isExhaustiveGuard (Right _) = True
 -- |
 -- Returns the uncovered set of case alternatives
 --
-missingCases :: Environment -> ModuleName -> [Binder] -> CaseAlternative -> ([[Binder]], Bool)
+missingCases :: Environment -> ModuleName -> [Binder] -> CaseAlternative -> ([[Binder]], Maybe Bool)
 missingCases env mn uncovered ca = missingCasesMultiple env mn uncovered (caseAlternativeBinders ca)
 
-missingAlternative :: Environment -> ModuleName -> CaseAlternative -> [Binder] -> ([[Binder]], Bool)
+missingAlternative :: Environment -> ModuleName -> CaseAlternative -> [Binder] -> ([[Binder]], Maybe Bool)
 missingAlternative env mn ca uncovered
   | isExhaustiveGuard (caseAlternativeResult ca) = mcases 
   | otherwise = ([uncovered], snd mcases)
@@ -232,27 +234,27 @@ missingAlternative env mn ca uncovered
 -- Then, returns the uncovered set of case alternatives.
 -- 
 checkExhaustive :: forall m. (MonadWriter MultipleErrors m) => Environment -> ModuleName -> [CaseAlternative] -> m ()
-checkExhaustive env mn cas = makeResult . first nub $ foldl' step ([initial], (True, [])) cas
+checkExhaustive env mn cas = makeResult . first nub $ foldl' step ([initial], pure True) cas
   where
-  step :: ([[Binder]], (Bool, [[Binder]])) -> CaseAlternative -> ([[Binder]], (Bool, [[Binder]]))
-  step (uncovered, (nec, redundant)) ca =
+  step :: ([[Binder]], Maybe Bool) -> CaseAlternative -> ([[Binder]], Maybe Bool)
+  step (uncovered, nec) ca =
     let (missed, pr) = unzip (map (missingAlternative env mn ca) uncovered)
-        cond = or pr
-    in (concat missed, (cond && nec, if cond then redundant else caseAlternativeBinders ca : redundant))
+        cond = or <$> sequenceA pr
+    in (concat missed, liftA2 (&&) cond nec)
+    where
+    sequenceA = foldr (liftA2 (:)) (pure [])
 
   initial :: [Binder]
   initial = initialize numArgs
     where
     numArgs = length . caseAlternativeBinders . head $ cas 
 
-  makeResult :: ([[Binder]], (Bool, [[Binder]])) -> m ()
-  --makeResult (_, (False, _)) = error "Redundant!"
-  makeResult (bss, (_, bss')) =
+  makeResult :: ([[Binder]], Maybe Bool) -> m ()
+  makeResult (_, Just False) = error "Redundant!"
+  makeResult (bss, _) =
     do unless (null bss) tellExhaustive
-       unless (null bss') tellRedundant
     where
     tellExhaustive = tell . errorMessage . uncurry NotExhaustivePattern . second null . splitAt 5 $ bss
-    tellRedundant = tell . errorMessage . uncurry OverlappingPattern . second null . splitAt 5 $ bss'
 
 -- |
 -- Exhaustivity checking over a list of declarations
