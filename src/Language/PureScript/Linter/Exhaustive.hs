@@ -153,7 +153,7 @@ missingCasesSingle _ _ (BooleanBinder bl) (BooleanBinder br)
   | bl == br = ([], True)
   | otherwise = ([BooleanBinder bl], False)
 missingCasesSingle env mn b (PositionedBinder _ _ cb) = missingCasesSingle env mn b cb
-missingCasesSingle _ _ b _ = ([b], False)
+missingCasesSingle _ _ b _ = ([b], True)
 
 -- |
 -- Returns the uncovered set of binders
